@@ -517,10 +517,11 @@ func IsClientConnected() bool {
 	return nc.IsConnected()
 }
 
-// IsConstellationStandalone reports whether this server has no peer lighthouses
-// to cluster with over NATS. When true, all NATS-adjacent activity must be
-// skipped — a single-node NATS cluster cannot form a JetStream quorum and
-// every downstream operation spams errors.
+// IsConstellationStandalone reports whether this server has no Cosmos peers
+// to talk to over NATS — neither peer lighthouses to cluster with nor non-
+// lighthouse Cosmos servers that would connect to this node as clients. Plain
+// Nebula client devices (CosmosNode == 0) don't run NATS so they don't count.
+// When true, all NATS-adjacent activity must be skipped.
 func IsConstellationStandalone() bool {
 	if !utils.GetMainConfig().ConstellationConfig.Enabled {
 		return true
@@ -530,9 +531,11 @@ func IsConstellationStandalone() bool {
 		utils.Fatal("[NATS] Failed to get current device IP", err)
 		return false
 	}
-	cips, _ := GetClusterIPs()
-	for _, u := range cips {
-		if u.Hostname() != myIP {
+	for _, device := range CachedDevices {
+		if device.IP == myIP {
+			continue
+		}
+		if device.CosmosNode > 0 {
 			return false
 		}
 	}

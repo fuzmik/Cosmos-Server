@@ -1,3 +1,6 @@
+## Version 0.22.12
+ - Allow single lighthouse to start NATS (regression)
+
 ## Version 0.22.11
  - Added labels to volumes
  - Minor improvement on Constellation edit device
