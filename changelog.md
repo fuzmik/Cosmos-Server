@@ -1,3 +1,8 @@
+## Version 0.22.11
+ - Added labels to volumes
+ - Minor improvement on Constellation edit device
+ - Some pro scaffolding
+
 ## Version 0.22.10
  - Fix some Restic warning breaking integration
  - Remove NATS when there's only one server in Constellation

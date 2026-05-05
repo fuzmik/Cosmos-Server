@@ -393,6 +393,11 @@ export const ConstellationVPN = ({ freeVersion }) => {
                   IsRelay: currentDevice ? currentDevice.isRelay : false,
                   IsExitNode: currentDevice ? currentDevice.isExitNode : false,
                   IsLoadBalancer: currentDevice ? currentDevice.isLoadBalancer : false,
+                  // TagsText is the comma-separated string shown in the input;
+                  // parsed on submit into the array the backend expects.
+                  TagsText: (currentDevice && Array.isArray(currentDevice.tags))
+                    ? currentDevice.tags.join(', ')
+                    : '',
                   NATSReplicas: config.ConstellationConfig.NATSReplicas || 1,
                 }}
                 onSubmit={async (values) => {
@@ -405,11 +410,17 @@ export const ConstellationVPN = ({ freeVersion }) => {
                     return;
                   }
 
+                  const parsedTags = (values.TagsText || '')
+                    .split(',')
+                    .map((t) => t.trim())
+                    .filter((t) => t.length > 0);
+
                   await API.constellation.editDevice({
                     isLighthouse: values.IsLighthouse,
                     isRelay: values.IsRelay,
                     isExitNode: values.IsExitNode,
                     isLoadBalancer: values.IsLoadBalancer,
+                    tags: parsedTags,
                   });
 
                   setTimeout(() => {
@@ -474,6 +485,23 @@ export const ConstellationVPN = ({ freeVersion }) => {
                           </Tooltip>
                         </Stack>} />
                       </>}
+
+                      {/* Tags: pro-only feature. Gated on proFeatures.isPro() (not
+                          !freeVersion, which is also true for non-pro paid tiers).
+                          Any node (lighthouse or client) can have tags — they drive
+                          the scheduler's deployment affinity filter. */}
+                      {proFeatures.isPro && proFeatures.isPro() && constellationEnabled && <CosmosInputText
+                        disabled={!isAdmin}
+                        formik={formik}
+                        name="TagsText"
+                        placeholder={t('mgmt.constellation.setup.tags.placeholder')}
+                        label={<Stack direction="row" spacing={0.5} alignItems="center" component="span">
+                          <span>{t('mgmt.constellation.setup.tags.label')}</span>
+                          <Tooltip title={t('mgmt.constellation.setup.tags.tooltip')}>
+                            <QuestionCircleOutlined style={{ fontSize: 14, cursor: 'help', opacity: 0.6 }} />
+                          </Tooltip>
+                        </Stack>}
+                      />}
 
                       {(!freeVersion || config.ConstellationConfig.ThisDeviceName) && <PermissionGuard permission={PERM_RESOURCES}>
                         <LoadingButton

@@ -162,6 +162,10 @@ definitions:
         type: boolean
       isRelay:
         type: boolean
+      tags:
+        items:
+          type: string
+        type: array
     type: object
   container.Config:
     properties:
@@ -521,6 +525,10 @@ definitions:
     properties:
       driver:
         type: string
+      labels:
+        additionalProperties:
+          type: string
+        type: object
       name:
         description: name must be unique
         type: string
@@ -1999,7 +2007,7 @@ info:
   contact: {}
   description: REST API for Cosmos Cloud server management
   title: Cosmos Server API
-  version: 0.22.10
+  version: 0.22.11
 paths:
   /_logs:
     get:

@@ -4,7 +4,7 @@
         "description": "REST API for Cosmos Cloud server management",
         "title": "Cosmos Server API",
         "contact": {},
-        "version": "0.22.10"
+        "version": "0.22.11"
     },
     "basePath": "/cosmos",
     "paths": {
@@ -8426,6 +8426,12 @@
                 },
                 "isRelay": {
                     "type": "boolean"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -8939,6 +8945,12 @@
             "properties": {
                 "driver": {
                     "type": "string"
+                },
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "name": {
                     "description": "name must be unique",

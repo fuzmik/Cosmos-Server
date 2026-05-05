@@ -2,13 +2,18 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 	"github.com/golang-jwt/jwt"
-
+	"github.com/shirou/gopsutil/v3/common"
+	"github.com/shirou/gopsutil/v3/mem"
+	
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
@@ -124,6 +129,33 @@ func (sdk *FirebaseApiSdk) RenewLicense(oldToken string) (string, int, error) {
 		"agentMode": fmt.Sprintf("%t", FBL.AgentMode),
 	}
 
+	if IsPro() {
+		ctx := context.Background()
+
+		if IsInsideContainer {
+			if _, err := os.Stat("/mnt/host"); err == nil {
+				ctx = context.WithValue(context.Background(),
+					common.EnvKey, common.EnvMap{
+						common.HostProcEnvKey: "/mnt/host/proc",
+						common.HostSysEnvKey:  "/mnt/host/sys",
+						common.HostEtcEnvKey:  "/mnt/host/etc",
+						common.HostVarEnvKey:  "/mnt/host/var",
+						common.HostRunEnvKey:  "/mnt/host/run",
+						common.HostDevEnvKey:  "/mnt/host/dev",
+						common.HostRootEnvKey: "/mnt/host/",
+					},
+				)
+			}
+		}
+
+		memInfo, err := mem.VirtualMemoryWithContext(ctx)
+		if err != nil {
+			Error("[Cloud] Error fetching RAM for license renewal", err)
+		} else {
+			payload["ram"] = strconv.FormatUint(memInfo.Total, 10)
+		}
+	}
+
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to marshal payload: %v", err)
@@ -189,6 +221,30 @@ func isTokenOlderThan(token string, duration time.Duration) bool {
 	result := age > duration
 	Debug(fmt.Sprintf("[Cloud] isTokenOlderThan: issued=%v age=%v threshold=%v older=%v", issuedAt, age, duration, result))
 	return result
+}
+
+func GetSubscriptionTypeFromToken(serverToken string) string {
+	token, _, err := new(jwt.Parser).ParseUnverified(serverToken, jwt.MapClaims{})
+	if err != nil {
+		return ""
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+
+	subType, _ := claims["subscriptionType"].(string)
+	return subType
+}
+
+// IsTokenValidForProduct returns false when running the Pro build against a
+// non-Pro subscription token — a Pro-only binary must refuse regular licences.
+func IsTokenValidForProduct(serverToken string) bool {
+	if !IsPro() {
+		return true
+	}
+	return GetSubscriptionTypeFromToken(serverToken) == "pro"
 }
 
 func GetNumberUsersFromToken(serverToken string) (int, int) {
@@ -312,6 +368,11 @@ func ProcessLicence() {
 		})
 
 		if err == nil && token.Valid && !isTokenOlderThan(serverToken, 24*time.Hour) {
+			if !IsTokenValidForProduct(serverToken) {
+				MajorError("[Cloud] Licence subscription type is not valid for this product (Pro required)", nil)
+				FBL.LValid = false
+				return
+			}
 			Debug("[Cloud] Existing server token is valid and not too old, using it")
 			FBL.ServerToken = serverToken
 			FBL.LValid = true
@@ -328,6 +389,11 @@ func ProcessLicence() {
 
 		// Offline fallback: use existing token if still valid
 		if serverToken != "" && !isTokenExpiringWithin(serverToken, 0) {
+			if !IsTokenValidForProduct(serverToken) {
+				MajorError("[Cloud] Licence subscription type is not valid for this product (Pro required)", nil)
+				FBL.LValid = false
+				return
+			}
 			Log("[Cloud] Keeping existing token (offline)")
 			FBL.ServerToken = serverToken
 			FBL.LValid = true
@@ -337,6 +403,12 @@ func ProcessLicence() {
 		}
 
 		MajorError("[Cloud] Token expired and renewal failed", err)
+		FBL.LValid = false
+		return
+	}
+
+	if !IsTokenValidForProduct(newToken) {
+		MajorError("[Cloud] Licence subscription type is not valid for this product (Pro required)", nil)
 		FBL.LValid = false
 		return
 	}

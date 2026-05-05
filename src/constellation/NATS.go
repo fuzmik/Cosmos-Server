@@ -17,7 +17,8 @@ import (
 	"github.com/nats-io/nats.go"
 
 	"github.com/azukaar/cosmos-server/src/utils"
-	
+	"github.com/azukaar/cosmos-server/src/pro"
+
 	natsClient "github.com/nats-io/nats.go"
 )
 
@@ -29,6 +30,23 @@ type NodeHeartbeat struct {
 	IsExitNode bool
 	CosmosNode int
 	Tunnels []utils.ProxyRouteConfig
+	// RunningDeployments is the list of scheduler-managed deployment names
+	// currently running on this node, derived from docker containers carrying
+	// the `cosmos-deployment` label. Populated from docker at heartbeat time;
+	// see UpdateLocalTunnelCache / heartbeat goroutine in tunnels.go.
+	RunningDeployments []string `json:"runningDeployments"`
+	// CPUPercent and RAMPercent are the node's latest resource-usage sample,
+	// populated from pro.GetCurrentResources() on each heartbeat tick. Used by
+	// the LeastBusyPlacement strategy. Zero when MonitoringOn is false.
+	CPUPercent float64 `json:"cpuPercent,omitempty"`
+	RAMPercent float64 `json:"ramPercent,omitempty"`
+	// MonitoringOn signals whether CPU/RAM numbers are trustworthy. False when
+	// the operator disabled monitoring (MonitoringDisabled config flag) or
+	// when the sampler hasn't produced a reading yet.
+	MonitoringOn bool `json:"monitoringOn"`
+	// Tags mirror ConstellationDevice.Tags so the leader can filter eligible
+	// placement targets by deployment affinity without an extra DB round-trip.
+	Tags []string `json:"tags,omitempty"`
 }
 
 var ns *server.Server
@@ -180,11 +198,16 @@ func StartNATS() {
 				Publish: &server.SubjectPermission{
 						Allow: []string{
 							"cosmos."+username+".>", "_INBOX.>",
-							"cosmos._global_.>", 
+							"cosmos._global_.>",
 							"_INBOX.>",
+							// Scheduler: leader publishes per-target deployment commands
+							// to cosmos.<target>.deployments.command. Scoped so non-leaders
+							// can't fabricate arbitrary cross-node traffic.
+							"cosmos.*.deployments.>",
 							"$KV.constellation-nodes.>",
+							"$KV.constellation-deployments.>",
 		                    "$JS.API.STREAM.INFO.>",
-							"$JS.API.>", 
+							"$JS.API.>",
 						},
 				},
 				Subscribe: &server.SubjectPermission{
@@ -193,8 +216,9 @@ func StartNATS() {
 							"cosmos._global_.>",
 							"_INBOX.>",
 		                    "$KV.constellation-nodes.>",
+		                    "$KV.constellation-deployments.>",
 		                    "$JS.API.STREAM.INFO.>",
-							"$JS.API.>", 
+							"$JS.API.>",
 						},
 				},
 			},
@@ -641,6 +665,17 @@ func MasterNATSClientRouter() {
 	})
 
 	SyncNATSClientRouter(nc)
+
+	// Scheduler: subscribe this node to its own per-target deployment command
+	// subject so the leader can dispatch apply/remove here.
+	if device, err := GetCurrentDevice(); err == nil {
+		self := sanitizeNATSUsername(device.DeviceName)
+		if subErr := pro.RegisterNodeDispatchHandler(nc, self); subErr != nil {
+			utils.Warn("[SCHED-NODE] failed to register dispatch handler: " + subErr.Error())
+		}
+	} else {
+		utils.Warn("[SCHED-NODE] cannot register dispatch handler: GetCurrentDevice failed: " + err.Error())
+	}
 }
 
 func PingNATSClient() bool {

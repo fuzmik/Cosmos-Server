@@ -10,6 +10,8 @@ import (
     "bufio"
     "strings"
     "syscall"
+
+    "github.com/azukaar/cosmos-server/src/utils"
 )
 
 type ReleaseAsset struct {
@@ -46,7 +48,13 @@ func parseMD5File(content string) string {
 
 func GetLatestVersion(includeBeta bool) (*VersionInfo, error) {
     // Fetch releases from GitHub API
-    resp, err := http.Get("https://api.github.com/repos/azukaar/cosmos-server/releases")
+
+    updateURL := "https://api.github.com/repos/azukaar/cosmos-server/releases"
+    if utils.IsPro() {
+        updateURL = "https://api.cosmos-cloud.io/proupdates"
+    }
+
+    resp, err := http.Get(updateURL)
     if err != nil {
         return nil, fmt.Errorf("failed to fetch releases: %v", err)
     }
