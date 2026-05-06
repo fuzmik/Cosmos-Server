@@ -4,7 +4,7 @@
         "description": "REST API for Cosmos Cloud server management",
         "title": "Cosmos Server API",
         "contact": {},
-        "version": "0.22.12"
+        "version": "0.22.13"
     },
     "basePath": "/cosmos",
     "paths": {
@@ -9334,6 +9334,10 @@
                     "type": "string"
                 },
                 "httpsCertificateMode": {
+                    "type": "string"
+                },
+                "licence": {
+                    "description": "Optional: Pro licence key — stored on the lighthouse config and\nvalidated via utils.ProcessLicence at the end of setup.",
                     "type": "string"
                 },
                 "mongodb": {

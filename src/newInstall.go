@@ -268,6 +268,10 @@ type SetupJSON struct {
 
 	// Optional: create admin API token
 	CreateAdminToken bool `json:"createAdminToken,omitempty"`
+
+	// Optional: Pro licence key — stored on the lighthouse config and
+	// validated via utils.ProcessLicence at the end of setup.
+	Licence string `json:"licence,omitempty"`
 }
 
 // SetupRoute godoc
@@ -353,6 +357,16 @@ func SetupRoute(w http.ResponseWriter, req *http.Request) {
 
 	if !config.DisableUserManagement {
 		waitForDB()
+	}
+
+	// ── Step 1b: Licence (optional) ───────────────────────────────────
+	// Persist the licence before constellation join so the joining flow
+	// can pick it up (constellation_config may rely on Pro features).
+	if request.Licence != "" {
+		config.Licence = request.Licence
+		utils.SaveConfigTofile(config)
+		utils.LoadBaseMainConfig(config)
+		utils.ProcessLicence()
 	}
 
 	// ── Step 2: HTTPS ─────────────────────────────────────────────────

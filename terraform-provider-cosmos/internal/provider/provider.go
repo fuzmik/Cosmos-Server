@@ -78,10 +78,9 @@ func (p *CosmosProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	if !config.Token.IsNull() {
 		token = config.Token.ValueString()
 	}
-	if token == "" {
-		resp.Diagnostics.AddError("Missing token", "token must be set in the provider configuration or via COSMOS_TOKEN environment variable.")
-		return
-	}
+	// token may be empty: cosmos_install runs against an unconfigured server
+	// where /api/setup is unauthenticated. Resources that require auth will
+	// surface a 401 from the server with a clear error.
 
 	insecure := os.Getenv("COSMOS_INSECURE") == "true"
 	if !config.Insecure.IsNull() {
@@ -116,6 +115,9 @@ func (p *CosmosProvider) Resources(_ context.Context) []func() resource.Resource
 		resources.NewSnapRAIDResource,
 		resources.NewStorageMountResource,
 		resources.NewGroupResource,
+		resources.NewDeploymentResource,
+		resources.NewInstallResource,
+		resources.NewRemoteInstallResource,
 	}
 }
 

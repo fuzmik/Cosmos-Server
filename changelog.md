@@ -1,3 +1,6 @@
+## Version 0.22.13
+ - Add licence to new install SDK function
+
 ## Version 0.22.12
  - Allow single lighthouse to start NATS (regression)
 
