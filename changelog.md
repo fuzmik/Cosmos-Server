@@ -1,3 +1,6 @@
+## Version 0.22.14
+ - added missing deployments function in the SDK
+
 ## Version 0.22.13
  - Add licence to new install SDK function
 
