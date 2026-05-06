@@ -472,4 +472,15 @@ func SetupRoute(w http.ResponseWriter, req *http.Request) {
 		"status": "OK",
 		"data":   responseData,
 	})
+
+	// Flush so the client receives the response (including adminToken)
+	// before we exit, then restart so the freshly-saved config is reloaded
+	// from scratch by the launcher / supervisor.
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	go func() {
+		time.Sleep(1 * time.Second)
+		os.Exit(0)
+	}()
 }

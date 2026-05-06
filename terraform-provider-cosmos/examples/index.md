@@ -30,7 +30,7 @@ These assume you already have a configured Cosmos server and an admin token; the
 #
 #    provider_installation {
 #      dev_overrides {
-#        "registry.terraform.io/azukaar/cosmos" = "/path/to/built/binary/dir"
+#        "cosmos-cloud.io/azukaar/cosmos" = "/path/to/built/binary/dir"
 #      }
 #      direct {}
 #    }

@@ -189,6 +189,10 @@ WantedBy=multi-user.target`
 func main() {
 	docker.IsInsideContainer()
 
+	if utils.IsInsideContainer && pro.IsPro() {
+		utils.Fatal("[ERROR] Cosmos Cloud Pro features are not supported inside a container. Please run Cosmos Cloud Pro on a host machine for full functionality.", nil)
+	}
+
 	if os.Getenv("COSMOS_CONFIG_FOLDER") != "" {
 		utils.CONFIGFOLDER = os.Getenv("COSMOS_CONFIG_FOLDER")
 	} else if utils.IsInsideContainer {
@@ -202,7 +206,7 @@ func main() {
 }
 
 // @title Cosmos Server API
-// @version 0.22.14
+// @version 0.22.15
 // @description REST API for Cosmos Cloud server management
 // @BasePath /cosmos
 // @securityDefinitions.apikey BearerAuth

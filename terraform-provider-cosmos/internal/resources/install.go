@@ -5,9 +5,9 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	cosmossdk "github.com/azukaar/cosmos-server/go-sdk"
 	"github.com/azukaar/terraform-provider-cosmos/internal/client"
@@ -282,46 +282,70 @@ func (r *installResource) Create(ctx context.Context, req resource.CreateRequest
 	plan.AdminToken = types.StringValue(setupResult.AdminToken)
 	plan.AdminTokenName = types.StringValue(setupResult.AdminTokenName)
 
+	// /api/setup triggers a server restart (~1s after responding). Poll the
+	// new endpoint until it comes back up so dependents don't race. The
+	// scheme depends on the user's HTTPS choice — DISABLED (or unset) means
+	// the server stays on plain HTTP after restart.
+	hostname := plan.Hostname.ValueString()
+	if hostname != "" {
+		scheme := "https"
+		mode := strings.ToUpper(plan.HTTPSCertificateMode.ValueString())
+		if mode == "" || mode == "DISABLED" {
+			scheme = "http"
+		}
+		// 3-minute budget: LE issuance + redirect + restart can each add latency.
+		if err := waitForServer(ctx, scheme, hostname, 3*time.Minute, 5*time.Second); err != nil {
+			resp.Diagnostics.AddError("Server did not come back up after /api/setup", err.Error())
+			return
+		}
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
+// waitForServer polls <scheme>://<hostname>/cosmos/api/status until any HTTP
+// response is received or `timeout` elapses. Any status code (e.g. 200 in
+// NewInstall mode, 401 once configured) proves the server is back online.
+// TLS verification is skipped because the cert may be self-signed or a
+// freshly-issued LE cert that hasn't propagated yet.
+func waitForServer(ctx context.Context, scheme, hostname string, timeout, interval time.Duration) error {
+	url := scheme + "://" + hostname + "/cosmos/api/status"
+	httpClient := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		httpResp, err := httpClient.Get(url)
+		if err == nil {
+			httpResp.Body.Close()
+			return nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out after %s waiting for %s: %w", timeout, url, lastErr)
+		}
+		time.Sleep(interval)
+	}
+}
+
 func (r *installResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	// cosmos_install is one-shot: drift detection is intentionally a no-op.
+	// The pre-bootstrap base_url (used to call /api/setup) only serves
+	// ACME challenges + redirect after install, so probing it for status
+	// is unreliable. Just preserve state.
 	var state installModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	// /api/status is unauthenticated when NewInstall=true (returns 200) and
-	// requires PERM_LOGIN otherwise (returns 401). We use the status code as
-	// the signal: 401 → server is configured, 200 → server was reset back to
-	// new-install. We bypass the SDK client because it injects the (possibly
-	// missing) provider token, which we don't want for this probe.
-	statusCode, body, err := probeStatus(r.client.BaseURL)
-	if err != nil {
-		// Server unreachable — preserve state, surface a warning rather than
-		// nuking the resource for a transient outage.
-		resp.Diagnostics.AddWarning("Could not reach Cosmos server", err.Error())
-		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
-		return
-	}
-
-	if statusCode == http.StatusOK {
-		// Server is back in NewInstall mode — install was reset externally.
-		resp.State.RemoveResource(ctx)
-		return
-	}
-
-	if statusCode == http.StatusUnauthorized {
-		// Configured server requiring auth — this is the expected steady state.
-		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
-		return
-	}
-
-	resp.Diagnostics.AddWarning(
-		"Unexpected /api/status response",
-		fmt.Sprintf("HTTP %d (body: %s)", statusCode, truncate(body, 200)),
-	)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -376,26 +400,3 @@ func stringPtrIfSet(v types.String) *string {
 	return &s
 }
 
-func probeStatus(baseURL string) (int, string, error) {
-	url := strings.TrimRight(baseURL, "/") + "/cosmos/api/status"
-	httpClient := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-	httpResp, err := httpClient.Get(url)
-	if err != nil {
-		return 0, "", err
-	}
-	defer httpResp.Body.Close()
-
-	body, _ := io.ReadAll(httpResp.Body)
-	return httpResp.StatusCode, string(body), nil
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
-}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 	"github.com/golang-jwt/jwt"
 	"github.com/shirou/gopsutil/v3/common"
 	"github.com/shirou/gopsutil/v3/mem"
-	
+
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
@@ -292,19 +293,27 @@ func GetNumberUsersFromToken(serverToken string) (int, int) {
 
 
 func GetNumberUsers() int {
+	// Pro is unlimited; non-Pro keeps the licensed seat count (or the
+	// 5-seat free tier when no licence is loaded).
+	if IsPro() {
+		return math.MaxInt32
+	}
 	if FBL.LValid {
 		return FBL.UserNumber
-	} else {
-		return 5
 	}
+	return 5
 }
 
 func GetNumberCosmosNode() int {
+	// Pro is unlimited; non-Pro keeps the licensed node count (or the
+	// 1-node free tier when no licence is loaded).
+	if IsPro() {
+		return math.MaxInt32
+	}
 	if FBL.LValid {
 		return FBL.CosmosNodeNumber
-	} else {
-		return 1
 	}
+	return 1
 }
 
 func isTokenExpiringWithin(token string, duration time.Duration) bool {

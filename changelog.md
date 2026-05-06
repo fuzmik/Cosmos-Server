@@ -1,3 +1,7 @@
+## Version 0.22.15
+ - Terraform improvements for first installs 
+ - Some pro scaffolding
+
 ## Version 0.22.14
  - added missing deployments function in the SDK
 

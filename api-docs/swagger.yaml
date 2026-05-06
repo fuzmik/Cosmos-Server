@@ -2057,7 +2057,7 @@ info:
   contact: {}
   description: REST API for Cosmos Cloud server management
   title: Cosmos Server API
-  version: 0.22.14
+  version: 0.22.15
 paths:
   /_logs:
     get:

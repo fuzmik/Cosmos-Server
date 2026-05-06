@@ -5,7 +5,7 @@ terraform {
       version = "~> 2.0"
     }
     cosmos = {
-      source = "registry.terraform.io/azukaar/cosmos"
+      source = "cosmos-cloud.io/azukaar/cosmos"
     }
   }
 }
@@ -42,9 +42,14 @@ variable "image" {
   default = "ubuntu-24-04-x64"
 }
 
-variable "lighthouse_hostname" {
-  description = "Public DNS for node 0 (must resolve to its public IP for Let's Encrypt). Node 0 is the constellation founder; once the cluster is up, all three nodes are equal Cosmos servers."
-  type        = string
+variable "node_hostnames" {
+  description = "Three DNS names, one per node. Each must resolve to the matching digitalocean_droplet.node[i].ipv4_address before apply, so Let's Encrypt can issue per-node certs. node_hostnames[0] also doubles as the constellation VPN endpoint (UDP 4242)."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.node_hostnames) == 3
+    error_message = "node_hostnames must contain exactly three entries."
+  }
 }
 
 variable "admin_password" {
@@ -129,8 +134,10 @@ resource "cosmos_remote_install" "node" {
 # servers (cosmos_node = 2) once they've joined.
 
 provider "cosmos" {
+  # Pre-bootstrap server: still on plain HTTP (port 80). Once cosmos_install
+  # finishes, the cluster alias below switches to HTTPS via the real DNS name.
   alias    = "founder_anon"
-  base_url = "https://${digitalocean_droplet.node[0].ipv4_address}"
+  base_url = "http://${digitalocean_droplet.node[0].ipv4_address}"
   insecure = true
 }
 
@@ -139,7 +146,7 @@ resource "cosmos_install" "founder" {
   depends_on = [cosmos_remote_install.node]
 
   mongodb_mode           = "Create"
-  hostname               = var.lighthouse_hostname
+  hostname               = var.node_hostnames[0]
   https_certificate_mode = "LETSENCRYPT"
   ssl_email              = "ops@example.com"
   nickname               = "admin"
@@ -149,15 +156,16 @@ resource "cosmos_install" "founder" {
 
 provider "cosmos" {
   alias    = "cluster"
-  base_url = "https://${var.lighthouse_hostname}"
+  base_url = "https://${var.node_hostnames[0]}"
   token    = cosmos_install.founder.admin_token
 }
 
 resource "cosmos_constellation" "main" {
   provider      = cosmos.cluster
   device_name   = "node-0"
-  hostname      = var.lighthouse_hostname
+  hostname      = var.node_hostnames[0]
   is_lighthouse = true
+  nats_replicas = 3
 }
 
 # ─── Stage 3: register the other two nodes as full Cosmos servers ─────────
@@ -180,13 +188,13 @@ resource "cosmos_constellation_device" "peer" {
 
 provider "cosmos" {
   alias    = "peer1_anon"
-  base_url = "https://${digitalocean_droplet.node[1].ipv4_address}"
+  base_url = "http://${digitalocean_droplet.node[1].ipv4_address}"
   insecure = true
 }
 
 provider "cosmos" {
   alias    = "peer2_anon"
-  base_url = "https://${digitalocean_droplet.node[2].ipv4_address}"
+  base_url = "http://${digitalocean_droplet.node[2].ipv4_address}"
   insecure = true
 }
 
@@ -195,8 +203,9 @@ resource "cosmos_install" "peer1" {
   depends_on = [cosmos_remote_install.node]
 
   mongodb_mode           = "DisableUserManagement"
-  hostname               = digitalocean_droplet.node[1].ipv4_address
-  https_certificate_mode = "SELFSIGNED"
+  hostname               = var.node_hostnames[1]
+  https_certificate_mode = "LETSENCRYPT"
+  ssl_email              = "ops@example.com"
   nickname               = "admin"
   password               = var.admin_password
   constellation_config   = cosmos_constellation_device.peer[0].config
@@ -207,8 +216,9 @@ resource "cosmos_install" "peer2" {
   depends_on = [cosmos_remote_install.node]
 
   mongodb_mode           = "DisableUserManagement"
-  hostname               = digitalocean_droplet.node[2].ipv4_address
-  https_certificate_mode = "SELFSIGNED"
+  hostname               = var.node_hostnames[2]
+  https_certificate_mode = "LETSENCRYPT"
+  ssl_email              = "ops@example.com"
   nickname               = "admin"
   password               = var.admin_password
   constellation_config   = cosmos_constellation_device.peer[1].config

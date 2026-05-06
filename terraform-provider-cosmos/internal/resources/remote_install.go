@@ -212,7 +212,11 @@ func (r *remoteInstallResource) Create(ctx context.Context, req resource.CreateR
 	}
 	defer session.Close()
 
-	command := fmt.Sprintf("set -o pipefail; curl -fsSL %s | sh", shellQuote(scriptURL))
+	// get-pro.sh uses bashisms ([[, process substitution, etc.) so we must
+	// pipe to bash (not sh — which is dash on Debian/Ubuntu). Wrap the whole
+	// pipe in `bash -c` so set -o pipefail applies to the curl|bash pipeline.
+	innerCmd := fmt.Sprintf("set -o pipefail; curl -fsSL %s | bash", shellQuote(scriptURL))
+	command := fmt.Sprintf("bash -c %s", shellQuote(innerCmd))
 
 	commandTimeout := time.Duration(plan.CommandTimeoutSeconds.ValueInt64()) * time.Second
 	cmdCtx, cancel := context.WithTimeout(ctx, commandTimeout)

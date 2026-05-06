@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     cosmos = {
-      source = "registry.terraform.io/azukaar/cosmos"
+      source = "cosmos-cloud.io/azukaar/cosmos"
     }
   }
 }

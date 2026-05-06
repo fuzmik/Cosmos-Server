@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     cosmos = {
-      source = "registry.terraform.io/azukaar/cosmos"
+      source = "cosmos-cloud.io/azukaar/cosmos"
     }
   }
 }
@@ -47,8 +47,10 @@ variable "cosmos_licence" {
 # 1. The provider points at the VM but has no token yet — cosmos_install will
 # bootstrap the server and emit one.
 provider "cosmos" {
-  base_url = "https://${var.vm_host}"
-  insecure = true # self-signed cert until Let's Encrypt completes
+  # Pre-bootstrap server: still on plain HTTP (port 80). The configured alias
+  # below switches to HTTPS once cosmos_install issues its Let's Encrypt cert.
+  base_url = "http://${var.vm_host}"
+  insecure = true
 }
 
 # 2. Install Cosmos itself by SSHing in and running the public installer.
