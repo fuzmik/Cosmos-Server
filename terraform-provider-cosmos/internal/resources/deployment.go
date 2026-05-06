@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"time"
 
 	cosmossdk "github.com/azukaar/cosmos-server/go-sdk"
 	"github.com/azukaar/terraform-provider-cosmos/internal/client"
@@ -15,6 +18,36 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
+
+// retryOn503 retries an API call while the server returns 503. The
+// constellation-deployments KV is created asynchronously by
+// pro.ClientHeartbeatInit after the NATS cluster forms, which lags
+// cosmos_install completion by ~30-60s. The deployments endpoints are the
+// only ones gated on that KV, so the wait belongs here rather than in
+// cosmos_install. On final timeout we return the last 503 response so the
+// parser surfaces the real DP001 error.
+func retryOn503(ctx context.Context, do func() (*http.Response, error)) (*http.Response, error) {
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		resp, err := do()
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusServiceUnavailable {
+			return resp, nil
+		}
+		if time.Now().After(deadline) {
+			return resp, nil
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
+	}
+}
 
 var (
 	_ resource.Resource                = &deploymentResource{}
@@ -170,11 +203,13 @@ func (r *deploymentResource) populateState(ctx context.Context, m *deploymentMod
 		m.Storage = types.SetNull(types.StringType)
 	}
 
-	composeBytes, err := json.Marshal(dep.Compose)
-	if err != nil {
-		return fmt.Errorf("marshalling compose: %w", err)
-	}
-	m.Compose = types.StringValue(string(composeBytes))
+	// Compose is intentionally not refreshed from the server. The server
+	// roundtrips it through docker.DockerServiceCreateRequest (zero-value
+	// fields without omitempty re-emit on response) and further mutates it
+	// at deploy time, so the response can't byte-match what the user wrote.
+	// Terraform's consistent-result check compares strings, so we keep the
+	// user's HCL-authored value as the source of truth in state. Trade-off:
+	// out-of-band edits to compose won't be detected by `terraform plan`.
 
 	return nil
 }
@@ -192,7 +227,9 @@ func (r *deploymentResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	httpResp, err := r.client.Raw.PostApiConstellationDeployments(ctx, *body)
+	httpResp, err := retryOn503(ctx, func() (*http.Response, error) {
+		return r.client.Raw.PostApiConstellationDeployments(ctx, *body)
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating deployment", err.Error())
 		return
@@ -224,7 +261,9 @@ func (r *deploymentResource) Read(ctx context.Context, req resource.ReadRequest,
 	}
 
 	name := state.Name.ValueString()
-	httpResp, err := r.client.Raw.GetApiConstellationDeploymentsName(ctx, name)
+	httpResp, err := retryOn503(ctx, func() (*http.Response, error) {
+		return r.client.Raw.GetApiConstellationDeploymentsName(ctx, name)
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("Error reading deployment", err.Error())
 		return
@@ -266,7 +305,9 @@ func (r *deploymentResource) Update(ctx context.Context, req resource.UpdateRequ
 	}
 
 	name := plan.Name.ValueString()
-	httpResp, err := r.client.Raw.PutApiConstellationDeploymentsName(ctx, name, *body)
+	httpResp, err := retryOn503(ctx, func() (*http.Response, error) {
+		return r.client.Raw.PutApiConstellationDeploymentsName(ctx, name, *body)
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating deployment", err.Error())
 		return
@@ -298,7 +339,9 @@ func (r *deploymentResource) Delete(ctx context.Context, req resource.DeleteRequ
 	}
 
 	name := state.Name.ValueString()
-	httpResp, err := r.client.Raw.DeleteApiConstellationDeploymentsName(ctx, name)
+	httpResp, err := retryOn503(ctx, func() (*http.Response, error) {
+		return r.client.Raw.DeleteApiConstellationDeploymentsName(ctx, name)
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("Error deleting deployment", err.Error())
 		return

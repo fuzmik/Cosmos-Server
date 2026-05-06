@@ -215,7 +215,29 @@ func (r *remoteInstallResource) Create(ctx context.Context, req resource.CreateR
 	// get-pro.sh uses bashisms ([[, process substitution, etc.) so we must
 	// pipe to bash (not sh — which is dash on Debian/Ubuntu). Wrap the whole
 	// pipe in `bash -c` so set -o pipefail applies to the curl|bash pipeline.
-	innerCmd := fmt.Sprintf("set -o pipefail; curl -fsSL %s | bash", shellQuote(scriptURL))
+	//
+	// Freshly provisioned Debian/Ubuntu VMs run cloud-init plus apt-daily /
+	// unattended-upgrades in the background. Those hold /var/lib/dpkg/lock-*
+	// and race the installer's apt-get calls. Wait for cloud-init to drain,
+	// stop the apt-daily timers, then poll until no process holds an apt or
+	// dpkg lock before kicking off the installer.
+	innerCmd := fmt.Sprintf(`set -o pipefail
+if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
+if command -v cloud-init >/dev/null 2>&1; then
+  cloud-init status --wait >/dev/null 2>&1 || true
+fi
+$SUDO systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+$SUDO systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service 2>/dev/null || true
+n=0
+while $SUDO fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/lib/dpkg/lock >/dev/null 2>&1; do
+  n=$((n+1))
+  if [ "$n" -gt 120 ]; then
+    echo "Timed out waiting for apt/dpkg locks to clear (10 min)" >&2
+    exit 1
+  fi
+  sleep 5
+done
+curl -fsSL %s | bash`, shellQuote(scriptURL))
 	command := fmt.Sprintf("bash -c %s", shellQuote(innerCmd))
 
 	commandTimeout := time.Duration(plan.CommandTimeoutSeconds.ValueInt64()) * time.Second
