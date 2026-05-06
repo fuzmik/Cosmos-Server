@@ -1,3 +1,6 @@
+## Version 0.22.17
+ - Fixed bug with some constellation devices not being deletable
+ 
 ## Version 0.22.16
  - Improve standalone constellation check
  - More Terraform improvements 
