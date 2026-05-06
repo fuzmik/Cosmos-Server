@@ -539,6 +539,15 @@ func IsConstellationStandalone() bool {
 			return false
 		}
 	}
+	// Before the initial sync, CachedDevices only knows about this server.
+	// GetClusterIPs also pulls peer lighthouses from the nebula config file,
+	// so fall back to it to detect bootstrap-time peers we can cluster with.
+	cips, _ := GetClusterIPs()
+	for _, u := range cips {
+		if u.Hostname() != myIP {
+			return false
+		}
+	}
 	return true
 }
 

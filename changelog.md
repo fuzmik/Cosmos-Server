@@ -1,3 +1,7 @@
+## Version 0.22.16
+ - Improve standalone constellation check
+ - More Terraform improvements 
+
 ## Version 0.22.15
  - Terraform improvements for first installs 
  - Some pro scaffolding

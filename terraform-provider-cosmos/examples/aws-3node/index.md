@@ -42,6 +42,5 @@ Outputs: `node_ips` (list of 3) and `admin_token` (sensitive).
 
 ## Notes
 
-- Peer nodes (1 and 2) use `mongodb_mode = "DisableUserManagement"` — the founder owns user state, replicated cluster-wide via constellation.
 - All three nodes use `LETSENCRYPT`. Each `node_hostnames[i]` must resolve to the matching `aws_instance.node[i].public_ip` before the corresponding `cosmos_install` runs, otherwise the LE HTTP-01 challenge will fail. The two-stage apply above handles the chicken-and-egg.
 - The `cosmos_deployment.web` lives in NATS KV and is cluster-replicated, so the `cosmos.cluster` provider could equally point at any of the three nodes.

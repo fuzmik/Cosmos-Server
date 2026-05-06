@@ -19,6 +19,23 @@ type ReleaseAsset struct {
     DownloadURL string `json:"browser_download_url"`
 }
 
+func (a *ReleaseAsset) UnmarshalJSON(data []byte) error {
+    var raw struct {
+        Name               string `json:"name"`
+        BrowserDownloadURL string `json:"browser_download_url"`
+        DownloadURL        string `json:"download_url"`
+    }
+    if err := json.Unmarshal(data, &raw); err != nil {
+        return err
+    }
+    a.Name = raw.Name
+    a.DownloadURL = raw.BrowserDownloadURL
+    if a.DownloadURL == "" {
+        a.DownloadURL = raw.DownloadURL
+    }
+    return nil
+}
+
 type Release struct {
     TagName string         `json:"tag_name"`
     PreRelease bool        `json:"prerelease"`
@@ -66,8 +83,18 @@ func GetLatestVersion(includeBeta bool) (*VersionInfo, error) {
     }
 
     var releases []Release
-    if err := json.Unmarshal(body, &releases); err != nil {
-        return nil, fmt.Errorf("failed to parse JSON: %v", err)
+    if utils.IsPro() {
+        var wrapper struct {
+            Releases []Release `json:"releases"`
+        }
+        if err := json.Unmarshal(body, &wrapper); err != nil {
+            return nil, fmt.Errorf("failed to parse JSON: %v", err)
+        }
+        releases = wrapper.Releases
+    } else {
+        if err := json.Unmarshal(body, &releases); err != nil {
+            return nil, fmt.Errorf("failed to parse JSON: %v", err)
+        }
     }
 
     // Find latest release that matches criteria

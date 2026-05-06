@@ -202,7 +202,7 @@ resource "cosmos_install" "peer1" {
   provider   = cosmos.peer1_anon
   depends_on = [cosmos_remote_install.node]
 
-  mongodb_mode           = "DisableUserManagement"
+  mongodb_mode           =  "Create"
   hostname               = var.node_hostnames[1]
   https_certificate_mode = "LETSENCRYPT"
   ssl_email              = "ops@example.com"
@@ -215,7 +215,7 @@ resource "cosmos_install" "peer2" {
   provider   = cosmos.peer2_anon
   depends_on = [cosmos_remote_install.node]
 
-  mongodb_mode           = "DisableUserManagement"
+  mongodb_mode           =  "Create"
   hostname               = var.node_hostnames[2]
   https_certificate_mode = "LETSENCRYPT"
   ssl_email              = "ops@example.com"
